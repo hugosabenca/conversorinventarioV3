@@ -42,25 +42,22 @@ def processar_arquivo_generico(caminho_csv):
         if "date" in dt_leitura_original.lower() or not dt_leitura_original[0].isdigit():
             continue
 
-        # --- AJUSTE 1: Formatação da Data (Universal) ---
-        # Aplica a formatação AGORA, antes de decidir se é PA ou Bobina
+        # --- Formatação da Data (Universal) ---
         try:
-            # Tenta converter de mm-dd-yyyy para dd/mm/yyyy
             obj_date = datetime.strptime(dt_leitura_original, '%m-%d-%Y')
             dt_formatada = obj_date.strftime('%d/%m/%Y')
         except:
-            # Se falhar (já estiver formatada ou erro), mantém a original
             dt_formatada = dt_leitura_original
 
         # Estrutura padrão da linha
         nova_linha = {
-            "Data da Leitura": dt_formatada, # Usa a data já corrigida
+            "Data da Leitura": dt_formatada,
             "Hora da Leitura": hr_leitura,
             "Filial": None,
             "Código": None,
             "Armazém": None,
             "Lote": None,
-            "Peso": None, # None = Célula vazia no Excel
+            "Peso": None,
             "Localização": os.path.splitext(os.path.basename(caminho_csv))[0]
         }
 
@@ -85,7 +82,7 @@ def processar_arquivo_generico(caminho_csv):
                 try:
                     peso_val = float(peso_str) / 1000.0
                 except:
-                    peso_val = None # Se der erro no PA, também deixa vazio
+                    peso_val = None
 
                 nova_linha["Filial"] = filial
                 nova_linha["Código"] = codigo
@@ -105,7 +102,6 @@ def processar_arquivo_generico(caminho_csv):
         # TESTE 2: É BOBINA? (Ou Bobina com estrutura completa)
         # ====================================================================
         
-        # --- AJUSTE 2: Inicializa peso como None (Vazio) em vez de 0.0 ---
         lote_b = "erro"
         peso_b = None 
 
@@ -125,13 +121,11 @@ def processar_arquivo_generico(caminho_csv):
                 except:
                     lote_b, peso_b = "erro Code128/*", None
             elif dados_lidos.isdigit() and len(dados_lidos) <= 5:
-                 # Se for muito curto e só numero, assume que é peso
                  try:
                     peso_b, lote_b = float(dados_lidos)/1000.0, ""
                  except:
                     peso_b, lote_b = None, dados_lidos
             else:
-                 # Aqui cai o caso "8014270401" -> Peso fica None
                  lote_b, peso_b = dados_lidos, None
 
         # CASO 2: QR CODE / DATAMATRIX
@@ -196,7 +190,7 @@ def processar_arquivo_generico(caminho_csv):
 
         else:
             lote_b = dados_lidos
-            peso_b = None # Garante vazio se não reconhecer nada
+            peso_b = None 
         
         nova_linha["Lote"] = lote_b
         nova_linha["Peso"] = peso_b
@@ -212,18 +206,39 @@ st.set_page_config(page_title="Conversor de Inventário Dox", layout="wide")
 st.title("Conversor de Inventário Unificado")
 st.markdown("---")
 
+# --- LÓGICA DO BOTÃO LIMPAR (SESSION STATE) ---
+if 'uploader_key' not in st.session_state:
+    st.session_state.uploader_key = 0
+
+def limpar_lista():
+    st.session_state.uploader_key += 1
+
 col1, col2 = st.columns([2, 1])
+
 with col1:
+    # O parametro 'key' muda cada vez que clicamos em Limpar, resetando o widget
     uploaded_files = st.file_uploader(
         "Importar arquivos .csv (Aceita Bobina e Produto Acabado misturados)",
         type="csv",
-        accept_multiple_files=True
+        accept_multiple_files=True,
+        key=str(st.session_state.uploader_key)
     )
+    
+    # --- FRASE DE CONTAGEM E BOTÃO LIMPAR ---
+    if uploaded_files:
+        qtd_arquivos = len(uploaded_files)
+        col_msg, col_btn = st.columns([3, 1])
+        with col_msg:
+            st.info(f"📂 **{qtd_arquivos} arquivos anexados.**")
+        with col_btn:
+            st.button("🗑️ Limpar Lista", on_click=limpar_lista, type="secondary", use_container_width=True)
 
 with col2:
     st.info("Configurações de Saída")
     nome_arquivo_usuario = st.text_input("Nome do Arquivo Final (sem .xlsx):", value="")
 
+# --- BOTÃO CONVERTER ---
+st.markdown("###") # Espaçamento
 if st.button("Converter Arquivos", type="primary"):
     if not uploaded_files:
         st.warning("⚠️ Por favor, carregue pelo menos um arquivo .csv.")
@@ -261,7 +276,6 @@ if st.button("Converter Arquivos", type="primary"):
                             max_len = max((len(str(cell.value)) for cell in col if cell.value is not None), default=0)
                             ws.column_dimensions[get_column_letter(col[0].column)].width = max_len + 4
                             
-                            # Formatação de número apenas se tiver valor
                             if col[0].value == "Peso":
                                 for cell in col[1:]:
                                     if cell.value is not None:
